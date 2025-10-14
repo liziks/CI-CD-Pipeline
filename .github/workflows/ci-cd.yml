@@ -368,30 +368,32 @@ jobs:
 
 
 #Этап пятый -  жокер хаб)
-  docker_publish:
-    needs: build
+  dockerhub_publish:
     runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
-  
-      # Шаг диагностики (временный)
-      - name: Debug Docker Hub credentials
+
+      - name: Docker login
+        run: echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_LOGIN }}" --password-stdin
+
+      - name: Read version
+        id: ver
+        shell: bash
         run: |
-          echo "Docker Hub username: paukuss"
-          echo "Token exists: ${{ secrets.DOCKERHUB_TOKEN != '' }}"
-          echo "Repository: CI-CD-Pipeline"
-  
-      # Исправленный логин
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+          v=$(tr -d '\r\n ' < version); v=${v#v}
+          echo "VERSION=$v" >> $GITHUB_OUTPUT
+
+      - name: Build image
+        run: docker build -t ${{ secrets.DOCKER_HUB_LOGIN }}/ci-cd-pipeline:v${{ steps.ver.outputs.VERSION }} .
+
+      - name: Push image
+        run: docker push ${{ secrets.DOCKER_HUB_LOGIN }}/ci-cd-pipeline:v${{ steps.ver.outputs.VERSION }}
+
+      - name: Add dockerhub label
+        if: github.event.pull_request != null
+        uses: actions-ecosystem/action-add-labels@v1
         with:
-          username: paukuss
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-  
-      # Сборка и публикация
-      - name: Build and push Docker image
-        run: |
-          VERSION=$(cat version)
-          echo "Building version: v$VERSION"
-          docker build -t paukuss/ci-cd-pipeline:v$VERSION .
-          docker push paukuss/ci-cd-pipeline:v$VERSION
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          labels: docker-published
